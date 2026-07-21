@@ -163,7 +163,29 @@ def sarvam_start_job(job_id):
 
 
 # ── Step 5: Poll job status ────────────────────────────────────────────────────
-@app.route("/sarvam/job-status/<job_id>", methods=["GET"])
+@app.route("/sarvam/debug-status/<job_id>", methods=["GET"])
+def sarvam_debug_status(job_id):
+    """Debug — returns full raw Sarvam status response"""
+    api_key = request.headers.get("X-Sarvam-Key", "")
+    if not api_key:
+        return jsonify({"error": "Missing X-Sarvam-Key header"}), 400
+    try:
+        r = req_lib.get(
+            f"{SARVAM_BASE}/{job_id}/status",
+            headers={"api-subscription-key": api_key},
+            timeout=30
+        )
+        # Return raw text so we see exactly what Sarvam sends
+        return app.response_class(
+            response=r.text,
+            status=r.status_code,
+            mimetype="application/json"
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+
 def sarvam_job_status(job_id):
     api_key = request.headers.get("X-Sarvam-Key", "")
     if not api_key:
