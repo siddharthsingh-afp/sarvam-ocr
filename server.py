@@ -164,32 +164,45 @@ def run_sarvam_ocr(file_bytes, filename, mime, flow="records"):
     else:
         return {"error": "Timed out", "_log": log, "_status": final_status}
 
-    # Step 6 — Get download URL and fetch content
+    # Step 6 — Download output
+    # Call download-files without specifying files — Sarvam returns all outputs
     extracted_text = ""
-    if output_file:
-        r6 = req_lib.post(f"{SARVAM_BASE}/{job_id}/download-files",
-                          headers=sh(), json={"files": [output_file]}, timeout=30)
-        log.append(f"Step6a={r6.status_code}")
-        if r6.ok:
+    log.append(f"final_status_keys={list(final_status.keys())}")
+
+    # Try calling download-files with empty files list to get all outputs
+    for files_param in [{}, {"files": []}, {"files": [output_file]} if output_file else {}]:
+        try:
+            r6 = req_lib.post(f"{SARVAM_BASE}/{job_id}/download-files",
+                              headers=sh(), json=files_param, timeout=30)
+            log.append(f"download files_param={files_param} status={r6.status_code}")
+            if not r6.ok:
+                continue
             j6 = r6.json()
+            log.append(f"download response={json.dumps(j6)[:300]}")
             dl_urls = j6.get("download_urls") or j6.get("urls") or {}
-            entry6 = dl_urls.get(output_file) or (list(dl_urls.values())[0] if dl_urls else None)
-            dl_url = ""
-            if isinstance(entry6, dict):
-                dl_url = entry6.get("file_url") or entry6.get("url") or ""
-            elif isinstance(entry6, str):
-                dl_url = entry6
-            log.append(f"dl_url={'yes' if dl_url else 'NO'}")
-            if dl_url:
+            if not dl_urls:
+                continue
+            # Try each URL in the response
+            for fname, entry6 in dl_urls.items():
+                dl_url = ""
+                if isinstance(entry6, dict):
+                    dl_url = entry6.get("file_url") or entry6.get("url") or ""
+                elif isinstance(entry6, str):
+                    dl_url = entry6
+                if not dl_url:
+                    continue
                 rd = req_lib.get(dl_url, timeout=60)
-                log.append(f"Step6b={rd.status_code} ct={rd.headers.get('content-type','?')} len={len(rd.content)}")
-                if rd.ok:
-                    extracted_text = extract_from_content(
-                        rd.content,
-                        rd.headers.get("content-type", ""),
-                        output_file
-                    )
-                    log.append(f"extracted_len={len(extracted_text)}")
+                log.append(f"fetched {fname}: status={rd.status_code} len={len(rd.content)}")
+                if rd.ok and rd.content:
+                    t = extract_from_content(rd.content, rd.headers.get("content-type",""), fname)
+                    if t:
+                        extracted_text += t + "\n"
+            if extracted_text:
+                log.append(f"Got text len={len(extracted_text)}")
+                break
+        except Exception as e:
+            log.append(f"download error: {e}")
+            continue
 
     if not extracted_text:
         return {
@@ -229,7 +242,15 @@ def run_sarvam_ocr(file_bytes, filename, mime, flow="records"):
     return result
 
 
-@app.route("/health", methods=["GET"])
+@app.route("/debug-job/<job_id>", methods=["GET"])
+def debug_job(job_id):
+    """Shows raw Sarvam status response for debugging"""
+    r = req_lib.get(f"{SARVAM_BASE}/{job_id}/status",
+                    headers={"api-subscription-key": SARVAM_KEY}, timeout=30)
+    return r.text, r.status_code, {"Content-Type": "application/json"}
+
+
+
 def health():
     return jsonify({"status": "ok", "service": "affordplan-sarvam-ocr", "key_set": bool(SARVAM_KEY)})
 
