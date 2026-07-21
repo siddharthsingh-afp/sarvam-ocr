@@ -169,8 +169,11 @@ def run_sarvam_ocr(file_bytes, filename, mime, flow="records"):
     extracted_text = ""
     log.append(f"final_status_keys={list(final_status.keys())}")
 
-    # Try calling download-files with empty files list to get all outputs
-    for files_param in [{}, {"files": []}, {"files": [output_file]} if output_file else {}]:
+    # Try calling download-files with different params to get all outputs
+    params_to_try = [{}, {"files": []}]
+    if output_file:
+        params_to_try.append({"files": [output_file]})
+    for files_param in params_to_try:
         try:
             r6 = req_lib.post(f"{SARVAM_BASE}/{job_id}/download-files",
                               headers=sh(), json=files_param, timeout=30)
@@ -229,7 +232,7 @@ def run_sarvam_ocr(file_bytes, filename, mime, flow="records"):
         return {"error": f"Extraction failed: {rx.status_code}",
                 "_log": log, "raw_text": extracted_text[:500]}
 
-    raw = rx.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+    raw = rx.json().get("choices", [{}])[0].get("message", {}).get("content") or ""
     raw = re.sub(r"^```json\s*", "", raw).strip()
     raw = re.sub(r"\s*```$", "", raw).strip()
     try:
@@ -257,21 +260,25 @@ def health():
 
 @app.route("/compare", methods=["POST"])
 def compare():
-    if not SARVAM_KEY:
-        return jsonify({"error": "SARVAM_API_KEY not set on server"}), 500
-    if "image" not in request.files:
-        return jsonify({"error": "No image. Send form field 'image'."}), 400
+    try:
+        if not SARVAM_KEY:
+            return jsonify({"error": "SARVAM_API_KEY not set on server"}), 500
+        if "image" not in request.files:
+            return jsonify({"error": "No image. Send form field 'image'."}), 400
 
-    f        = request.files["image"]
-    filename = f.filename or "document.jpg"
-    suffix   = os.path.splitext(filename)[1].lower()
-    if suffix not in ALLOWED:
-        return jsonify({"error": f"Unsupported format '{suffix}'"}), 400
+        f        = request.files["image"]
+        filename = f.filename or "document.jpg"
+        suffix   = os.path.splitext(filename)[1].lower()
+        if suffix not in ALLOWED:
+            return jsonify({"error": f"Unsupported format '{suffix}'"}), 400
 
-    mime = f.content_type or "image/jpeg"
-    flow = request.form.get("flow", "records")
-    result = run_sarvam_ocr(f.read(), filename, mime, flow)
-    return jsonify({"sarvam": result})
+        mime = f.content_type or "image/jpeg"
+        flow = request.form.get("flow", "records")
+        result = run_sarvam_ocr(f.read(), filename, mime, flow)
+        return jsonify({"sarvam": result})
+    except Exception as e:
+        import traceback
+        return jsonify({"error": str(e), "trace": traceback.format_exc()[-500:]}), 500
 
 
 @app.route("/", methods=["GET"])
