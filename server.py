@@ -6,6 +6,7 @@ Set SARVAM_API_KEY as environment variable on Render.
 """
 
 import os, re, json, time
+from pathlib import Path
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import requests as req_lib
@@ -186,12 +187,10 @@ def compare():
 
 @app.route("/", methods=["GET"])
 def index():
-    return jsonify({
-        "service": "Affordplan Sarvam OCR",
-        "endpoint": "POST /compare",
-        "fields": "image (file), flow (medicine/labtest/records/maternity)",
-        "health": "/health"
-    })
+    html_page = Path(__file__).parent / "ocr_test_page.html"
+    if html_page.exists():
+        return html_page.read_text(), 200, {"Content-Type": "text/html"}
+    return jsonify({"service": "Affordplan Sarvam OCR", "endpoint": "POST /compare"})
 
 
 if __name__ == "__main__":
