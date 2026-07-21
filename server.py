@@ -18,41 +18,16 @@ SARVAM_BASE = "https://api.sarvam.ai/doc-digitization/job/v1"
 SARVAM_CHAT = "https://api.sarvam.ai/v1/chat/completions"
 ALLOWED     = {".jpg", ".jpeg", ".png", ".webp", ".pdf"}
 
-# Single unified prompt — Sarvam classifies and extracts everything in one call
-UNIFIED_PROMPT = """You are a medical document reader for an Indian healthcare platform.
+# Single unified prompt — short and direct
+UNIFIED_PROMPT = """Extract ALL information from this medical document text. Return ONLY this JSON, nothing else:
 
-Read this document text carefully and extract all information into this exact JSON structure.
-Return ONLY valid JSON. No markdown. No explanation. No extra text.
+{"document_type":"","patient_name":"","patient_uhid":"","doctor_name":"","hospital_name":"","date":"","diagnosis":"","is_handwritten":false,"summary":"","edd":"","lmp":"","medicines":[],"lab_tests":[],"bill_items":[],"total_amount":""}
 
-{
-  "document_type": null,
-  "patient_name": null,
-  "patient_uhid": null,
-  "doctor_name": null,
-  "hospital_name": null,
-  "date": null,
-  "diagnosis": null,
-  "is_handwritten": null,
-  "summary": null,
-  "edd": null,
-  "lmp": null,
-  "medicines": [],
-  "lab_tests": [],
-  "bill_items": [],
-  "total_amount": null
-}
-
-Rules:
-- document_type: one of prescription, lab_report, bill, imaging, discharge, other
-- is_handwritten: true or false
-- summary: one short sentence describing the document
-- edd: Expected Date of Delivery if present, format YYYY-MM-DD
-- lmp: Last Menstrual Period if present, format YYYY-MM-DD
-- medicines: list of objects with keys name, strength, form, frequency, duration, quantity, confidence
-- lab_tests: list of objects with keys name, value, unit, reference_range, flag, confidence
-- bill_items: list of objects with keys description, amount
-- If a field is not found, use null
-- confidence values: high, medium, or low"""
+document_type = prescription OR lab_report OR bill OR imaging OR discharge OR other
+medicines items = {"name":"","strength":"","form":"","frequency":"","duration":"","quantity":"","confidence":"high"}
+lab_tests items = {"name":"","value":"","unit":"","reference_range":"","flag":"","confidence":"high"}
+bill_items items = {"description":"","amount":""}
+Use empty string for missing values. Return ONLY JSON."""
 
 
 def sh():
@@ -188,12 +163,12 @@ def run_sarvam_ocr(file_bytes, filename, mime):
     rx = req_lib.post(SARVAM_CHAT, headers=sh(), json={
         "model": "sarvam-30b",
         "messages": [
-            {"role": "system", "content": "You are a medical data extractor. Return ONLY valid JSON."},
+            {"role": "system", "content": "Return ONLY valid JSON. No explanation. No markdown. No reasoning."},
             {"role": "user",   "content": UNIFIED_PROMPT + "\n\nDOCUMENT TEXT:\n" + extracted_text}
         ],
-        "max_tokens": 3000,
+        "max_tokens": 4000,
         "temperature": 0
-    }, timeout=90)
+    }, timeout=120)
 
     log.append(f"Step7={rx.status_code}")
     if not rx.ok:
