@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sarvam Doc AI — Affordplan OCR</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#F0F2F5;--card:#fff;--ink:#111827;--muted:#6B7280;--line:#E5E7EB;
+  --teal:#0E7C6B;--teal-l:#D1FAE5;--teal-d:#0A5C50;
+  --blue:#2563EB;--blue-l:#EFF6FF;
+  --green:#059669;--green-l:#ECFDF5;
+  --amber:#D97706;--amber-l:#FFFBEB;
+  --red:#DC2626;--red-l:#FEF2F2;
+  --purple:#7C3AED;--purple-l:#EDE9FE;
+  --shadow:0 1px 3px rgba(0,0,0,.08),0 8px 24px rgba(0,0,0,.06);
+}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--ink);min-height:100vh;padding:28px 16px 80px}
+.wrap{max-width:680px;margin:0 auto}
+.header{margin-bottom:22px}
+.header-top{display:flex;align-items:center;gap:10px;margin-bottom:5px}
+.logo{width:34px;height:34px;background:var(--teal);border-radius:10px;display:grid;place-items:center;flex-shrink:0}
+.logo svg{color:#fff}
+h1{font-size:20px;font-weight:700;letter-spacing:-.02em}
+.subtitle{font-size:13px;color:var(--muted);line-height:1.5}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:14px;box-shadow:var(--shadow)}
+.field-label{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+.field-row{display:flex;align-items:center;gap:8px}
+.field-row input{flex:1;border:1px solid var(--line);border-radius:8px;padding:8px 11px;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink);background:var(--bg);outline:none;min-width:0}
+.field-row input:focus{border-color:var(--teal)}
+.dot{width:8px;height:8px;border-radius:50%;background:#D1D5DB;flex-shrink:0;transition:.3s}
+.dot.live{background:var(--green)}
+.flow-tabs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
+.flow-tab{background:var(--card);border:2px solid var(--line);border-radius:10px;padding:10px 12px;cursor:pointer;transition:.15s;text-align:left}
+.flow-tab:hover{border-color:var(--teal)}
+.flow-tab.active{border-color:var(--teal);background:var(--teal-l)}
+.ft-icon{font-size:16px;margin-bottom:3px}
+.ft-title{font-size:13px;font-weight:600}
+.ft-sub{font-size:11px;color:var(--muted);margin-top:1px}
+.flow-tab.active .ft-title{color:var(--teal)}
+.upload-zone{background:var(--card);border:2px dashed var(--line);border-radius:12px;padding:28px 20px;text-align:center;cursor:pointer;transition:.15s;margin-bottom:14px}
+.upload-zone:hover,.upload-zone.drag{border-color:var(--teal);background:var(--teal-l)}
+.dz-ico{width:40px;height:40px;background:var(--teal-l);border-radius:10px;display:grid;place-items:center;margin:0 auto 10px;color:var(--teal)}
+.dz-title{font-size:14px;font-weight:600;margin-bottom:3px}
+.dz-hint{font-size:12px;color:var(--muted);margin-bottom:12px}
+.btns{display:flex;gap:8px;justify-content:center}
+.btn{font-family:'Inter',sans-serif;font-size:13px;font-weight:600;border:none;border-radius:8px;padding:9px 16px;cursor:pointer;transition:.15s;display:inline-flex;align-items:center;gap:6px}
+.btn-p{background:var(--teal);color:#fff}.btn-p:hover{background:var(--teal-d)}
+.btn-g{background:var(--teal-l);color:var(--teal)}.btn-g:hover{background:#C5E8E3}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+input[type=file]{display:none}
+.preview-box{display:none;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:14px}
+.preview-box.show{display:block}
+.preview-img{width:100%;max-height:240px;object-fit:contain;background:#1F2937;display:block}
+.preview-foot{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;gap:8px}
+.preview-name{font-size:11px;font-family:'JetBrains Mono',monospace;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.btn-run{background:var(--teal);color:#fff;font-family:'Inter',sans-serif;font-size:13px;font-weight:600;border:none;border-radius:8px;padding:9px 18px;cursor:pointer;transition:.15s}
+.btn-run:hover{background:var(--teal-d)}
+.btn-run:disabled{opacity:.45;cursor:not-allowed}
+.steps{display:none;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:14px}
+.steps.show{display:block}
+.step{display:flex;align-items:center;gap:10px;padding:5px 0}
+.step-ico{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;flex-shrink:0;font-size:11px;font-weight:700}
+.step-ico.wait{background:var(--line);color:var(--muted)}
+.step-ico.active{background:var(--amber-l);color:var(--amber)}
+.step-ico.done{background:var(--green-l);color:var(--green)}
+.step-ico.err{background:var(--red-l);color:var(--red)}
+.step-text{font-size:12.5px;color:var(--muted)}
+.step-text.active{color:var(--ink);font-weight:500}
+.step-text.done{color:var(--green)}
+.step-text.err{color:var(--red)}
+.spinner-sm{width:14px;height:14px;border:2px solid var(--amber-l);border-top-color:var(--amber);border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0}
+@keyframes spin{to{transform:rotate(360deg)}}
+.err-bar{display:none;align-items:center;gap:10px;background:var(--red-l);border:1px solid #FECACA;border-radius:10px;padding:12px 14px;margin-bottom:14px}
+.err-bar.show{display:flex}
+.err-bar span{font-size:13px;color:var(--red)}
+.result{display:none;animation:up .3s ease}
+.result.show{display:block}
+@keyframes up{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.flow-badge{display:inline-flex;align-items:center;gap:7px;padding:6px 12px;border-radius:8px;margin-bottom:12px;font-size:13px;font-weight:600}
+.flow-badge.medicine{background:var(--green-l);color:var(--green)}
+.flow-badge.labtest{background:var(--blue-l);color:var(--blue)}
+.flow-badge.records{background:var(--amber-l);color:var(--amber)}
+.flow-badge.maternity{background:var(--purple-l);color:var(--purple)}
+.meta-grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:12px}
+.meta-cell{background:var(--card);padding:10px 12px}
+.meta-cell.full{grid-column:1/-1}
+.meta-lbl{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:2px}
+.meta-val{font-size:14px;font-weight:500}
+.meta-val.nil{color:#D1D5DB;font-style:italic;font-weight:400;font-size:13px}
+.section{background:var(--card);border:1px solid var(--line);border-radius:10px;margin-bottom:12px;overflow:hidden}
+.sec-head{padding:10px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between}
+.sec-title{font-size:13px;font-weight:700}
+.sec-count{font-size:11px;font-weight:600;background:var(--bg);padding:1px 7px;border-radius:10px;color:var(--muted)}
+.sec-body{padding:4px 14px 10px}
+.item{padding:8px 0;border-bottom:1px dashed var(--line)}
+.item:last-child{border:none}
+.item-name{font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.item-detail{font-size:12px;color:var(--muted);margin-top:2px}
+.conf{font-size:9px;font-weight:700;padding:1px 6px;border-radius:5px;text-transform:uppercase}
+.conf.high{background:var(--green-l);color:var(--green)}
+.conf.medium{background:var(--amber-l);color:var(--amber)}
+.conf.low{background:var(--red-l);color:var(--red)}
+.flagbadge{font-size:10px;font-weight:700;padding:1px 6px;border-radius:5px}
+.flagbadge.normal{background:var(--green-l);color:var(--green)}
+.flagbadge.high,.flagbadge.abnormal{background:var(--red-l);color:var(--red)}
+.flagbadge.low{background:var(--blue-l);color:var(--blue)}
+.edd-card{background:linear-gradient(135deg,#FDF4FF,#FAF5FF);border:1px solid #E9D5FF;border-radius:10px;padding:14px;margin-bottom:12px;display:flex;align-items:center;gap:12px}
+.edd-ico{font-size:26px}
+.edd-lbl{font-size:10px;font-weight:600;color:var(--purple);text-transform:uppercase;letter-spacing:.06em}
+.edd-date{font-size:22px;font-weight:700;color:#6D28D9}
+.edd-sub{font-size:11px;color:#A78BFA;margin-top:2px}
+details summary{cursor:pointer;list-style:none;font-size:12px;color:var(--blue);font-weight:500;padding:8px 0}
+details summary::-webkit-details-marker{display:none}
+.raw{font-family:'JetBrains Mono',monospace;font-size:11px;line-height:1.65;color:var(--muted);white-space:pre-wrap;word-break:break-word;max-height:200px;overflow:auto;background:var(--bg);padding:10px;border-radius:8px}
+.empty{color:var(--muted);font-style:italic;font-size:12px;padding:7px 0}
+.brand{text-align:center;font-size:11.5px;color:var(--muted);margin-top:20px}
+.brand b{color:var(--teal)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="header">
+    <div class="header-top">
+      <div class="logo">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+        </svg>
+      </div>
+      <h1>Sarvam Doc AI — OCR</h1>
+    </div>
+    <p class="subtitle">Upload a medical document. Select the flow. Only required fields are extracted.</p>
+  </div>
+
+  <div class="card">
+    <div class="field-label">Render Server URL</div>
+    <div class="field-row">
+      <input id="serverUrl" type="text" value="https://claude-ocr.onrender.com" spellcheck="false">
+      <div class="dot live" id="serverDot"></div>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-top:6px">Your deployed Render server — acts as proxy to Sarvam</div>
+  </div>
+
+  <div class="card">
+    <div class="field-label">Sarvam API Key</div>
+    <div class="field-row">
+      <input id="apiKey" type="password" placeholder="Paste your api-subscription-key here" spellcheck="false">
+      <div class="dot" id="apiDot"></div>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-top:6px">Get from: dashboard.sarvam.ai → API Keys</div>
+  </div>
+
+  <div class="field-label">Select Flow</div>
+  <div class="flow-tabs">
+    <div class="flow-tab active" data-flow="medicine" onclick="selectFlow('medicine')">
+      <div class="ft-icon">💊</div>
+      <div class="ft-title">Medicine Order</div>
+      <div class="ft-sub">Medicines + dosage + qty</div>
+    </div>
+    <div class="flow-tab" data-flow="labtest" onclick="selectFlow('labtest')">
+      <div class="ft-icon">🧪</div>
+      <div class="ft-title">Lab Test Booking</div>
+      <div class="ft-sub">Tests + values + flags</div>
+    </div>
+    <div class="flow-tab" data-flow="records" onclick="selectFlow('records')">
+      <div class="ft-icon">📋</div>
+      <div class="ft-title">Health Records</div>
+      <div class="ft-sub">Patient + doc type only</div>
+    </div>
+    <div class="flow-tab" data-flow="maternity" onclick="selectFlow('maternity')">
+      <div class="ft-icon">🤱</div>
+      <div class="ft-title">Maternity</div>
+      <div class="ft-sub">EDD + LMP only</div>
+    </div>
+  </div>
+
+  <div class="upload-zone" id="dropzone">
+    <div class="dz-ico">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/>
+        <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/>
+      </svg>
+    </div>
+    <div class="dz-title">Drop document here</div>
+    <div class="dz-hint">JPG · PNG · WEBP · PDF</div>
+    <div class="btns">
+      <button class="btn btn-p" id="chooseBtn" type="button">Choose file</button>
+      <button class="btn btn-g" id="cameraBtn" type="button">Camera</button>
+    </div>
+    <input type="file" id="fileInput" accept=".jpg,.jpeg,.png,.webp,.pdf">
+    <input type="file" id="cameraInput" accept="image/*" capture="environment">
+  </div>
+
+  <div class="preview-box" id="previewBox">
+    <img class="preview-img" id="previewImg" alt="preview">
+    <div class="preview-foot">
+      <span class="preview-name" id="previewName"></span>
+      <button class="btn-run" id="runBtn">Extract →</button>
+    </div>
+  </div>
+
+  <div class="steps" id="stepsBox">
+    <div class="step"><div class="step-ico wait" id="i1">1</div><div class="step-text" id="t1">Create job</div></div>
+    <div class="step"><div class="step-ico wait" id="i2">2</div><div class="step-text" id="t2">Register file</div></div>
+    <div class="step"><div class="step-ico wait" id="i3">3</div><div class="step-text" id="t3">Upload file to storage</div></div>
+    <div class="step"><div class="step-ico wait" id="i4">4</div><div class="step-text" id="t4">Start processing</div></div>
+    <div class="step"><div class="step-ico wait" id="i5">5</div><div class="step-text" id="t5">Waiting for Sarvam…</div></div>
+    <div class="step"><div class="step-ico wait" id="i6">6</div><div class="step-text" id="t6">Extracting required fields</div></div>
+  </div>
+
+  <div class="err-bar" id="errBar">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;color:var(--red)"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    <span id="errMsg"></span>
+  </div>
+
+  <div class="result" id="result"></div>
+  <div class="brand">Powered by <b>Sarvam Doc AI</b> via <b>Affordplan OCR Server</b></div>
+</div>
+
+<script>
+const PROMPTS = {
+  medicine:`From the extracted document text, extract ONLY these fields and return as JSON:
+{"patient_name":null,"doctor_name":null,"hospital_name":null,"date":null,"diagnosis":null,"medicines":[{"name":null,"strength":null,"form":null,"frequency":null,"duration":null,"quantity":null,"confidence":"high"}]}
+Rules: frequency=Indian format e.g.1-0-1/BD/TDS. quantity=frequency x duration as integer. Extract medicines ONLY. Return ONLY valid JSON.`,
+  labtest:`From the extracted document text, extract ONLY these fields and return as JSON:
+{"patient_name":null,"doctor_name":null,"hospital_name":null,"date":null,"lab_tests":[{"name":null,"value":null,"unit":null,"reference_range":null,"flag":null,"confidence":"high"}]}
+Rules: flag=NORMAL/HIGH/LOW/ABNORMAL. Extract tests ONLY. Return ONLY valid JSON.`,
+  records:`From the extracted document text, extract ONLY these fields and return as JSON:
+{"document_type":null,"patient_name":null,"patient_uhid":null,"doctor_name":null,"hospital_name":null,"date":null,"diagnosis":null,"is_handwritten":null,"summary":null}
+Rules: document_type=prescription/lab_report/bill/imaging/discharge/other. Return ONLY valid JSON.`,
+  maternity:`From the extracted document text, extract ONLY these fields and return as JSON:
+{"patient_name":null,"edd":null,"lmp":null}
+Rules: edd=Expected Date of Delivery in YYYY-MM-DD. lmp=Last Menstrual Period in YYYY-MM-DD. Return ONLY valid JSON.`
+};
+
+const FLOW_LABELS={medicine:"💊 Medicine Order",labtest:"🧪 Lab Test Booking",records:"📋 Health Records",maternity:"🤱 Maternity"};
+let currentFlow="medicine", currentFile=null;
+
+function selectFlow(f){
+  currentFlow=f;
+  document.querySelectorAll(".flow-tab").forEach(t=>t.classList.toggle("active",t.dataset.flow===f));
+  resetUI();
+}
+
+document.getElementById("apiKey").addEventListener("input",function(){
+  document.getElementById("apiDot").classList.toggle("live",this.value.trim().length>10);
+});
+
+const dz=document.getElementById("dropzone");
+document.getElementById("chooseBtn").onclick=e=>{e.stopPropagation();document.getElementById("fileInput").click();};
+document.getElementById("cameraBtn").onclick=e=>{e.stopPropagation();document.getElementById("cameraInput").click();};
+dz.onclick=()=>document.getElementById("fileInput").click();
+document.getElementById("fileInput").onchange=e=>handleFile(e.target.files[0]);
+document.getElementById("cameraInput").onchange=e=>handleFile(e.target.files[0]);
+dz.addEventListener("dragover",e=>{e.preventDefault();dz.classList.add("drag");});
+dz.addEventListener("dragleave",()=>dz.classList.remove("drag"));
+dz.addEventListener("drop",e=>{e.preventDefault();dz.classList.remove("drag");handleFile(e.dataTransfer.files[0]);});
+
+function handleFile(file){
+  if(!file)return;
+  currentFile=file;
+  if(file.type!=="application/pdf"){
+    const r=new FileReader();
+    r.onload=e=>{document.getElementById("previewImg").src=e.target.result;};
+    r.readAsDataURL(file);
+    document.getElementById("previewImg").style.display="block";
+  } else {
+    document.getElementById("previewImg").style.display="none";
+  }
+  document.getElementById("previewName").textContent=file.name+"  ·  "+(file.size/1024).toFixed(0)+" KB";
+  document.getElementById("previewBox").classList.add("show");
+  resetUI();
+}
+
+document.getElementById("runBtn").onclick=runOCR;
+
+function setStep(n,state,text){
+  const ico=document.getElementById("i"+n), txt=document.getElementById("t"+n);
+  ico.className="step-ico "+state;
+  if(state==="active") ico.innerHTML=`<div class="spinner-sm"></div>`;
+  else ico.innerHTML=state==="done"?"✓":state==="err"?"✕":n;
+  txt.className="step-text "+state;
+  if(text)txt.textContent=text;
+}
+
+function resetUI(){
+  document.getElementById("result").classList.remove("show");
+  document.getElementById("result").innerHTML="";
+  document.getElementById("errBar").classList.remove("show");
+  document.getElementById("stepsBox").classList.remove("show");
+  for(let i=1;i<=6;i++)setStep(i,"wait");
+}
+
+function showErr(msg){
+  document.getElementById("errMsg").textContent=msg;
+  document.getElementById("errBar").classList.add("show");
+  document.getElementById("runBtn").disabled=false;
+}
+
+function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
+
+function proxy(path){
+  const base=(document.getElementById("serverUrl").value||"https://claude-ocr.onrender.com").replace(/\/+$/,"");
+  return base+path;
+}
+
+function sarvamHdrs(apiKey){
+  return{"Content-Type":"application/json","X-Sarvam-Key":apiKey};
+}
+
+async function runOCR(){
+  if(!currentFile)return;
+  const apiKey=document.getElementById("apiKey").value.trim();
+  if(!apiKey){showErr("Please enter your Sarvam API key.");return;}
+
+  document.getElementById("runBtn").disabled=true;
+  resetUI();
+  document.getElementById("stepsBox").classList.add("show");
+
+  try{
+    // STEP 1 — Create job
+    setStep(1,"active","Creating job…");
+    const r1=await fetch(proxy("/sarvam/create-job"),{
+      method:"POST",
+      headers:sarvamHdrs(apiKey),
+      body:JSON.stringify({job_parameters:{language:"en-IN",output_format:"html"}})
+    });
+    const j1=await r1.json();
+    if(!r1.ok) throw new Error(`Step 1 failed (${r1.status}): ${JSON.stringify(j1).slice(0,200)}`);
+    const jobId=j1.job_id||j1.id||j1.jobId;
+    if(!jobId) throw new Error("Step 1: no job_id — "+JSON.stringify(j1).slice(0,200));
+    setStep(1,"done",`Job: ${String(jobId).slice(0,8)}…`);
+
+    // STEP 2 — Register file
+    setStep(2,"active","Registering file…");
+    const fileName=currentFile.name;
+    const r2=await fetch(proxy("/sarvam/register-files"),{
+      method:"POST",
+      headers:sarvamHdrs(apiKey),
+      body:JSON.stringify({job_id:jobId,files:[fileName]})
+    });
+    const j2=await r2.json();
+    if(!r2.ok) throw new Error(`Step 2 failed (${r2.status}): ${JSON.stringify(j2).slice(0,200)}`);
+    const uploadUrl=j2.upload_urls?.[fileName]?.file_url
+                 ||j2.upload_urls?.[fileName]
+                 ||Object.values(j2.upload_urls||{})[0]?.file_url
+                 ||Object.values(j2.upload_urls||{})[0];
+    if(!uploadUrl) throw new Error("Step 2: no upload URL — "+JSON.stringify(j2).slice(0,200));
+    setStep(2,"done","File registered");
+
+    // STEP 3 — Upload file via proxy (server does the Azure PUT)
+    setStep(3,"active","Uploading file…");
+    const fd=new FormData();
+    fd.append("image",currentFile,fileName);
+    const r3=await fetch(proxy("/sarvam/upload-file"),{
+      method:"POST",
+      headers:{"X-Sarvam-Key":apiKey,"X-Upload-Url":uploadUrl},
+      body:fd
+    });
+    const j3=await r3.json();
+    if(!r3.ok) throw new Error(`Step 3 failed (${r3.status}): ${JSON.stringify(j3).slice(0,200)}`);
+    setStep(3,"done","File uploaded");
+
+    // STEP 4 — Start job
+    setStep(4,"active","Starting processing…");
+    const r4=await fetch(proxy(`/sarvam/start-job/${jobId}`),{
+      method:"POST",
+      headers:sarvamHdrs(apiKey)
+    });
+    const j4=await r4.json().catch(()=>({}));
+    if(!r4.ok) throw new Error(`Step 4 failed (${r4.status}): ${JSON.stringify(j4).slice(0,200)}`);
+    setStep(4,"done","Processing started");
+
+    // STEP 5 — Poll status
+    setStep(5,"active","Sarvam processing… (15–60s)");
+    let state="", outputFile="", attempts=0;
+    while(attempts<40){
+      await sleep(2000);
+      attempts++;
+      const r5=await fetch(proxy(`/sarvam/job-status/${jobId}`),{
+        headers:sarvamHdrs(apiKey)
+      });
+      if(!r5.ok)continue;
+      const j5=await r5.json();
+      state=(j5.job_state||j5.status||j5.state||"").toLowerCase();
+      setStep(5,"active",`Processing… (${state||"running"}, ${attempts*2}s)`);
+      if(state.includes("complet")||state.includes("success")){
+        outputFile=j5.output_files?.[0]||j5.results?.[0]||"";
+        break;
+      }
+      if(state.includes("fail")||state.includes("error")){
+        throw new Error("Sarvam job failed: "+(j5.error_message||j5.message||state));
+      }
+    }
+    if(!state.includes("complet")&&!state.includes("success")){
+      throw new Error("Timed out waiting for Sarvam. Try again.");
+    }
+    setStep(5,"done",`Done (${attempts*2}s)`);
+
+    // STEP 6 — Download output + extract fields
+    setStep(6,"active","Downloading output…");
+    let extractedText="";
+
+    if(outputFile){
+      const r6=await fetch(proxy(`/sarvam/download-files/${jobId}`),{
+        method:"POST",
+        headers:sarvamHdrs(apiKey),
+        body:JSON.stringify({files:[outputFile]})
+      });
+      if(r6.ok){
+        const j6=await r6.json();
+        const dlUrl=j6.download_urls?.[outputFile]?.file_url
+                  ||j6.download_urls?.[outputFile]
+                  ||Object.values(j6.download_urls||{})[0]?.file_url
+                  ||Object.values(j6.download_urls||{})[0];
+        if(dlUrl){
+          const rd=await fetch(proxy("/sarvam/fetch-output"),{
+            method:"POST",
+            headers:{"Content-Type":"application/json","X-Sarvam-Key":apiKey},
+            body:JSON.stringify({url:dlUrl})
+          });
+          if(rd.ok){const jd=await rd.json();extractedText=jd.text||"";}
+        }
+      }
+    }
+
+    if(!extractedText){
+      const rs=await fetch(proxy(`/sarvam/job-status/${jobId}`),{headers:sarvamHdrs(apiKey)});
+      if(rs.ok){const js=await rs.json();extractedText=js.output||js.text||js.content||JSON.stringify(js);}
+    }
+
+    if(!extractedText) throw new Error("Could not retrieve extracted text from Sarvam.");
+
+    setStep(6,"active","Extracting required fields…");
+    const rx=await fetch(proxy("/sarvam/extract"),{
+      method:"POST",
+      headers:sarvamHdrs(apiKey),
+      body:JSON.stringify({prompt:PROMPTS[currentFlow],text:extractedText})
+    });
+
+    let parsed;
+    if(rx.ok){
+      const rxd=await rx.json();
+      const raw=rxd.choices?.[0]?.message?.content||"";
+      const clean=raw.replace(/^```json\s*/,"").replace(/\s*```$/,"").trim();
+      try{parsed=JSON.parse(clean);}catch(e){parsed={raw_text:clean};}
+    } else {
+      parsed={raw_extracted_text:extractedText.slice(0,2000)};
+    }
+
+    setStep(6,"done","Complete");
+    renderResult(parsed);
+
+  }catch(err){
+    showErr(err.message);
+    for(let i=1;i<=6;i++){
+      if(document.getElementById("i"+i).classList.contains("spinner-sm")||
+         document.getElementById("t"+i).classList.contains("active")){
+        setStep(i,"err");break;
+      }
+    }
+  }finally{
+    document.getElementById("runBtn").disabled=false;
+  }
+}
+
+const esc=s=>String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+const val=v=>v?`<span class="meta-val">${esc(v)}</span>`:`<span class="meta-val nil">— not found</span>`;
+const conf=c=>{const k=(c||"").toLowerCase();return k?`<span class="conf ${k}">${k}</span>`:"";}
+const flag=f=>{if(!f)return"";const k=f.toLowerCase();return`<span class="flagbadge ${k}">${esc(f)}</span>`;}
+
+function renderResult(d){
+  let html=`<div class="flow-badge ${currentFlow}">${esc(FLOW_LABELS[currentFlow])}</div>`;
+  if(currentFlow==="medicine") html+=renderMedicine(d);
+  else if(currentFlow==="labtest") html+=renderLabtest(d);
+  else if(currentFlow==="records") html+=renderRecords(d);
+  else if(currentFlow==="maternity") html+=renderMaternity(d);
+  html+=`<details><summary>View raw JSON</summary><pre class="raw">${esc(JSON.stringify(d,null,2))}</pre></details>`;
+  document.getElementById("result").innerHTML=html;
+  document.getElementById("result").classList.add("show");
+  document.getElementById("result").scrollIntoView({behavior:"smooth",block:"start"});
+}
+
+function renderMedicine(d){
+  let html=`<div class="meta-grid">
+    <div class="meta-cell"><div class="meta-lbl">Patient</div>${val(d.patient_name)}</div>
+    <div class="meta-cell"><div class="meta-lbl">Date</div>${val(d.date)}</div>
+    <div class="meta-cell"><div class="meta-lbl">Doctor</div>${val(d.doctor_name)}</div>
+    <div class="meta-cell"><div class="meta-lbl">Hospital</div>${val(d.hospital_name)}</div>
+    ${d.diagnosis?`<div class="meta-cell full"><div class="meta-lbl">Diagnosis</div><div class="meta-val">${esc(d.diagnosis)}</div></div>`:""}
+  </div>`;
+  const meds=d.medicines||[];
+  html+=`<div class="section"><div class="sec-head"><span class="sec-title">Medicines</span><span class="sec-count">${meds.length}</span></div><div class="sec-body">`;
+  if(!meds.length)html+=`<div class="empty">No medicines detected.</div>`;
+  else meds.forEach(m=>{
+    const det=[m.strength,m.form,m.frequency,m.duration].filter(Boolean).join(" · ");
+    html+=`<div class="item"><div class="item-name">${esc(m.name||"?")} ${conf(m.confidence)}</div>
+      ${det?`<div class="item-detail">${esc(det)}</div>`:""}
+      ${m.quantity?`<div class="item-detail" style="color:var(--teal);font-weight:600">Qty to order: ${esc(String(m.quantity))}</div>`:""}
+    </div>`;
+  });
+  html+=`</div></div>`;
+  return html;
+}
+
+function renderLabtest(d){
+  let html=`<div class="meta-grid">
+    <div class="meta-cell"><div class="meta-lbl">Patient</div>${val(d.patient_name)}</div>
+    <div class="meta-cell"><div class="meta-lbl">Date</div>${val(d.date)}</div>
+    <div class="meta-cell"><div class="meta-lbl">Doctor</div>${val(d.doctor_name)}</div>
+    <div class="meta-cell"><div class="meta-lbl">Hospital</div>${val(d.hospital_name)}</div>
+  </div>`;
+  const tests=d.lab_tests||[];
+  html+=`<div class="section"><div class="sec-head"><span class="sec-title">Lab Tests</span><span class="sec-count">${tests.length}</span></div><div class="sec-body">`;
+  if(!tests.length)html+=`<div class="empty">No tests detected.</div>`;
+  else tests.forEach(t=>{
+    const v2=[t.value,t.unit].filter(Boolean).join(" ");
+    const ref=t.reference_range?"Ref: "+t.reference_range:"";
+    html+=`<div class="item"><div class="item-name">${esc(t.name||"?")} ${flag(t.flag)} ${conf(t.confidence)}</div>
+      <div class="item-detail">${v2?`<b>${esc(v2)}</b>`:""} ${ref?esc(ref):""}</div>
+    </div>`;
+  });
+  html+=`</div></div>`;
+  return html;
+}
+
+function renderRecords(d){
+  const tc={prescription:"var(--green-l)",lab_report:"var(--blue-l)",bill:"var(--amber-l)",imaging:"var(--purple-l)",discharge:"var(--red-l)",other:"var(--bg)"};
+  const bg=tc[d.document_type]||"var(--bg)";
+  const hw=d.is_handwritten===true?"Handwritten":d.is_handwritten===false?"Printed":null;
+  return`<div class="meta-grid">
+    <div class="meta-cell full" style="background:${bg}"><div class="meta-lbl">Document Type</div><div class="meta-val" style="text-transform:capitalize">${val(d.document_type)}</div></div>
+    <div class="meta-cell"><div class="meta-lbl">Patient</div>${val(d.patient_name)}</div>
+    <div class="meta-cell"><div class="meta-lbl">UHID</div>${val(d.patient_uhid)}</div>
+    <div class="meta-cell"><div class="meta-lbl">Doctor</div>${val(d.doctor_name)}</div>
+    <div class="meta-cell"><div class="meta-lbl">Date</div>${val(d.date)}</div>
+    <div class="meta-cell full"><div class="meta-lbl">Hospital</div>${val(d.hospital_name)}</div>
+    ${d.diagnosis?`<div class="meta-cell full"><div class="meta-lbl">Diagnosis</div><div class="meta-val">${esc(d.diagnosis)}</div></div>`:""}
+    ${hw?`<div class="meta-cell full"><div class="meta-lbl">Written Type</div><div class="meta-val">${hw}</div></div>`:""}
+    ${d.summary?`<div class="meta-cell full"><div class="meta-lbl">Summary</div><div class="meta-val" style="font-size:13px;color:var(--muted)">${esc(d.summary)}</div></div>`:""}
+  </div>`;
+}
+
+function renderMaternity(d){
+  let html="";
+  if(d.edd){
+    html+=`<div class="edd-card"><div class="edd-ico">🤱</div><div>
+      <div class="edd-lbl">Expected Date of Delivery</div>
+      <div class="edd-date">${esc(d.edd)}</div>
+      ${d.lmp?`<div class="edd-sub">LMP: ${esc(d.lmp)}</div>`:""}
+    </div></div>`;
+  } else {
+    html+=`<div class="meta-grid"><div class="meta-cell full" style="background:var(--red-l)">
+      <div class="meta-lbl">EDD</div><div class="meta-val nil">Not found on this document</div>
+    </div></div>`;
+  }
+  html+=`<div class="meta-grid">
+    <div class="meta-cell"><div class="meta-lbl">Patient</div>${val(d.patient_name)}</div>
+    <div class="meta-cell"><div class="meta-lbl">LMP</div>${val(d.lmp)}</div>
+  </div>`;
+  return html;
+}
+</script>
+</body>
+</html>
