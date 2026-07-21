@@ -1,6 +1,6 @@
 """
 Affordplan — Sarvam OCR Service
-POST /compare with form field 'image' and 'flow'
+Single upload — auto-classifies document and extracts all required fields.
 Set SARVAM_API_KEY as environment variable on Render.
 """
 
@@ -18,48 +18,12 @@ SARVAM_BASE = "https://api.sarvam.ai/doc-digitization/job/v1"
 SARVAM_CHAT = "https://api.sarvam.ai/v1/chat/completions"
 ALLOWED     = {".jpg", ".jpeg", ".png", ".webp", ".pdf"}
 
-PROMPTS = {
-    "medicine": """Extract medicine details from this prescription text. Return ONLY this JSON:
-{
-  "patient_name": null,
-  "doctor_name": null,
-  "hospital_name": null,
-  "date": null,
-  "diagnosis": null,
-  "medicines": [
-    {
-      "name": null,
-      "strength": null,
-      "form": null,
-      "frequency": null,
-      "duration": null,
-      "quantity": null,
-      "confidence": "high"
-    }
-  ]
-}
-Return ONLY valid JSON. No explanation. No markdown.""",
+# Single unified prompt — Sarvam classifies and extracts everything in one call
+UNIFIED_PROMPT = """You are a medical document reader for an Indian healthcare platform.
 
-    "labtest": """Extract lab test details from this document text. Return ONLY this JSON:
-{
-  "patient_name": null,
-  "doctor_name": null,
-  "hospital_name": null,
-  "date": null,
-  "lab_tests": [
-    {
-      "name": null,
-      "value": null,
-      "unit": null,
-      "reference_range": null,
-      "flag": null,
-      "confidence": "high"
-    }
-  ]
-}
-Return ONLY valid JSON. No explanation. No markdown.""",
+Read this document text carefully and extract all information into this exact JSON structure.
+Return ONLY valid JSON. No markdown. No explanation. No extra text.
 
-    "records": """Extract document details from this medical document text. Return ONLY this JSON:
 {
   "document_type": null,
   "patient_name": null,
@@ -69,28 +33,33 @@ Return ONLY valid JSON. No explanation. No markdown.""",
   "date": null,
   "diagnosis": null,
   "is_handwritten": null,
-  "summary": null
-}
-document_type must be one of: prescription, lab_report, bill, imaging, discharge, other.
-Return ONLY valid JSON. No explanation. No markdown.""",
-
-    "maternity": """Extract maternity details from this document text. Return ONLY this JSON:
-{
-  "patient_name": null,
+  "summary": null,
   "edd": null,
-  "lmp": null
+  "lmp": null,
+  "medicines": [],
+  "lab_tests": [],
+  "bill_items": [],
+  "total_amount": null
 }
-edd = Expected Date of Delivery in YYYY-MM-DD format.
-lmp = Last Menstrual Period in YYYY-MM-DD format.
-Return ONLY valid JSON. No explanation. No markdown.""",
-}
+
+Rules:
+- document_type: one of prescription, lab_report, bill, imaging, discharge, other
+- is_handwritten: true or false
+- summary: one short sentence describing the document
+- edd: Expected Date of Delivery if present, format YYYY-MM-DD
+- lmp: Last Menstrual Period if present, format YYYY-MM-DD
+- medicines: list of objects with keys name, strength, form, frequency, duration, quantity, confidence
+- lab_tests: list of objects with keys name, value, unit, reference_range, flag, confidence
+- bill_items: list of objects with keys description, amount
+- If a field is not found, use null
+- confidence values: high, medium, or low"""
+
 
 def sh():
     return {"Content-Type": "application/json", "api-subscription-key": SARVAM_KEY}
 
 
 def html_to_text(html):
-    """Strip HTML tags and clean up whitespace"""
     text = re.sub(r"<style[^>]*>.*?</style>", " ", html, flags=re.DOTALL)
     text = re.sub(r"<script[^>]*>.*?</script>", " ", text, flags=re.DOTALL)
     text = re.sub(r"<br\s*/?>", "\n", text)
@@ -106,9 +75,7 @@ def html_to_text(html):
 
 
 def extract_from_content(content_bytes, content_type, filename):
-    """Extract plain text from whatever Sarvam returns — ZIP, HTML, or markdown"""
-    # ZIP file
-    if b"PK\x03\x04" == content_bytes[:4] or "zip" in content_type:
+    if b"PK\x03\x04" == content_bytes[:4] or "zip" in content_type or filename.endswith(".zip"):
         try:
             z = zipfile.ZipFile(io.BytesIO(content_bytes))
             parts = []
@@ -121,18 +88,16 @@ def extract_from_content(content_bytes, content_type, filename):
             return "\n".join(parts).strip()
         except Exception:
             pass
-    # HTML
     text = content_bytes.decode("utf-8", errors="ignore")
     if "<html" in text.lower() or "<!doctype" in text.lower():
         return html_to_text(text)
-    # Plain text / markdown
     return text.strip()
 
 
-def run_sarvam_ocr(file_bytes, filename, mime, flow="records"):
+def run_sarvam_ocr(file_bytes, filename, mime):
     log = []
 
-    # Step 1 — Create job (use html output format)
+    # Step 1 — Create job
     r1 = req_lib.post(SARVAM_BASE, headers=sh(),
                       json={"job_parameters": {"language": "en-IN", "output_format": "html"}},
                       timeout=30)
@@ -140,11 +105,10 @@ def run_sarvam_ocr(file_bytes, filename, mime, flow="records"):
     if not r1.ok:
         return {"error": f"Create job failed: {r1.status_code}", "_log": log}
 
-    j1 = r1.json()
-    job_id = j1.get("job_id") or j1.get("id")
+    job_id = r1.json().get("job_id") or r1.json().get("id")
     log.append(f"job_id={job_id}")
     if not job_id:
-        return {"error": "No job_id", "_log": log, "_j1": j1}
+        return {"error": "No job_id", "_log": log}
 
     # Step 2 — Register file
     r2 = req_lib.post(f"{SARVAM_BASE}/upload-files", headers=sh(),
@@ -161,9 +125,8 @@ def run_sarvam_ocr(file_bytes, filename, mime, flow="records"):
         upload_url = entry.get("file_url") or entry.get("url") or ""
     elif isinstance(entry, str):
         upload_url = entry
-    log.append(f"upload_url={'yes' if upload_url else 'NO'}")
     if not upload_url:
-        return {"error": "No upload URL", "_log": log, "_j2": j2}
+        return {"error": "No upload URL", "_log": log}
 
     # Step 3 — Upload to Azure blob
     r3 = req_lib.put(upload_url,
@@ -179,7 +142,6 @@ def run_sarvam_ocr(file_bytes, filename, mime, flow="records"):
     log.append(f"Step4={r4.status_code}")
 
     # Step 5 — Poll until complete
-    output_file = ""
     final_status = {}
     for attempt in range(40):
         time.sleep(2)
@@ -190,151 +152,75 @@ def run_sarvam_ocr(file_bytes, filename, mime, flow="records"):
         j5 = r5.json()
         final_status = j5
         state = (j5.get("job_state") or j5.get("status") or j5.get("state") or "").lower()
-        log.append(f"Poll{attempt+1}:state={state} keys={list(j5.keys())}")
-
+        log.append(f"Poll{attempt+1}:state={state}")
         if "complet" in state or "success" in state:
-            # Find output file name
-            for key in ("output_files", "outputFiles", "results", "output", "files"):
-                val = j5.get(key)
-                if isinstance(val, list) and val:
-                    output_file = val[0]
-                    break
-                elif isinstance(val, str) and val:
-                    output_file = val
-                    break
-            log.append(f"output_file={output_file}")
             break
-
         if "fail" in state or "error" in state:
-            return {"error": f"Job failed: {state}", "_log": log, "_status": j5}
+            return {"error": f"Job failed: {state}", "_log": log}
     else:
-        return {"error": "Timed out", "_log": log, "_status": final_status}
+        return {"error": "Timed out", "_log": log}
 
-    # Step 6 — Download output — Sarvam always outputs document.zip
+    # Step 6 — Download document.zip
     extracted_text = ""
-    log.append(f"final_status_keys={list(final_status.keys())}")
-
-    params_to_try = [{"files": ["document.zip"]}, {}, {"files": []}]
-    if output_file and output_file != "document.zip":
-        params_to_try.insert(0, {"files": [output_file]})
-
-    for files_param in params_to_try:
-        try:
-            r6 = req_lib.post(f"{SARVAM_BASE}/{job_id}/download-files",
-                              headers=sh(), json=files_param, timeout=30)
-            log.append(f"download files_param={files_param} status={r6.status_code}")
-            if not r6.ok:
-                continue
-            j6 = r6.json()
-            log.append(f"download response={json.dumps(j6)[:300]}")
-            dl_urls = j6.get("download_urls") or j6.get("urls") or {}
-            if not dl_urls:
-                continue
-            for fname, entry6 in dl_urls.items():
-                dl_url = ""
-                if isinstance(entry6, dict):
-                    dl_url = entry6.get("file_url") or entry6.get("url") or ""
-                elif isinstance(entry6, str):
-                    dl_url = entry6
-                if not dl_url:
-                    continue
-                rd = req_lib.get(dl_url, timeout=60)
-                log.append(f"fetched {fname}: status={rd.status_code} len={len(rd.content)}")
-                if rd.ok and rd.content:
-                    t = extract_from_content(rd.content, rd.headers.get("content-type",""), fname)
-                    if t:
-                        extracted_text += t + "\n"
-            if extracted_text:
-                log.append(f"Got text len={len(extracted_text)}")
-                break
-        except Exception as e:
-            log.append(f"download error: {e}")
-            continue
-        try:
-            r6 = req_lib.post(f"{SARVAM_BASE}/{job_id}/download-files",
-                              headers=sh(), json=files_param, timeout=30)
-            log.append(f"download files_param={files_param} status={r6.status_code}")
-            if not r6.ok:
-                continue
-            j6 = r6.json()
-            log.append(f"download response={json.dumps(j6)[:300]}")
-            dl_urls = j6.get("download_urls") or j6.get("urls") or {}
-            if not dl_urls:
-                continue
-            # Try each URL in the response
-            for fname, entry6 in dl_urls.items():
-                dl_url = ""
-                if isinstance(entry6, dict):
-                    dl_url = entry6.get("file_url") or entry6.get("url") or ""
-                elif isinstance(entry6, str):
-                    dl_url = entry6
-                if not dl_url:
-                    continue
-                rd = req_lib.get(dl_url, timeout=60)
-                log.append(f"fetched {fname}: status={rd.status_code} len={len(rd.content)}")
-                if rd.ok and rd.content:
-                    t = extract_from_content(rd.content, rd.headers.get("content-type",""), fname)
-                    if t:
-                        extracted_text += t + "\n"
-            if extracted_text:
-                log.append(f"Got text len={len(extracted_text)}")
-                break
-        except Exception as e:
-            log.append(f"download error: {e}")
-            continue
+    r6 = req_lib.post(f"{SARVAM_BASE}/{job_id}/download-files",
+                      headers=sh(), json={"files": ["document.zip"]}, timeout=30)
+    log.append(f"Step6={r6.status_code}")
+    if r6.ok:
+        j6 = r6.json()
+        dl_urls = j6.get("download_urls") or {}
+        entry6 = dl_urls.get("document.zip") or (list(dl_urls.values())[0] if dl_urls else None)
+        dl_url = ""
+        if isinstance(entry6, dict):
+            dl_url = entry6.get("file_url") or ""
+        elif isinstance(entry6, str):
+            dl_url = entry6
+        if dl_url:
+            rd = req_lib.get(dl_url, timeout=60)
+            log.append(f"fetch={rd.status_code} len={len(rd.content)}")
+            if rd.ok:
+                extracted_text = extract_from_content(rd.content, rd.headers.get("content-type",""), "document.zip")
+                log.append(f"text_len={len(extracted_text)}")
 
     if not extracted_text:
-        return {
-            "error": "No text extracted",
-            "_log": log,
-            "_final_status": final_status,
-            "_output_file": output_file
-        }
+        return {"error": "No text extracted", "_log": log}
 
-    # Step 7 — Apply targeted prompt via Sarvam 30B
-    prompt = PROMPTS.get(flow, PROMPTS["records"])
+    # Step 7 — Extract fields via Sarvam 30B
     rx = req_lib.post(SARVAM_CHAT, headers=sh(), json={
         "model": "sarvam-30b",
         "messages": [
-            {"role": "system", "content": "You are a medical data extractor. Return ONLY valid JSON. No markdown."},
-            {"role": "user",   "content": prompt + "\n\nDOCUMENT TEXT:\n" + extracted_text}
+            {"role": "system", "content": "You are a medical data extractor. Return ONLY valid JSON."},
+            {"role": "user",   "content": UNIFIED_PROMPT + "\n\nDOCUMENT TEXT:\n" + extracted_text}
         ],
-        "max_tokens": 1500,
+        "max_tokens": 3000,
         "temperature": 0
-    }, timeout=60)
+    }, timeout=90)
 
     log.append(f"Step7={rx.status_code}")
     if not rx.ok:
-        return {"error": f"Extraction failed: {rx.status_code}",
-                "_log": log, "raw_text": extracted_text[:500]}
+        return {"error": f"Extraction failed: {rx.status_code}", "_log": log,
+                "raw_text": extracted_text[:500]}
 
     rx_json = rx.json()
-    log.append(f"30B response keys={list(rx_json.keys())}")
-    log.append(f"30B choices={json.dumps(rx_json.get('choices',''))[:300]}")
+    finish_reason = (rx_json.get("choices") or [{}])[0].get("finish_reason", "")
+    log.append(f"finish_reason={finish_reason}")
 
     raw = (rx_json.get("choices") or [{}])[0]
     raw = (raw.get("message") or {}).get("content") or ""
     raw = re.sub(r"^```json\s*", "", raw).strip()
     raw = re.sub(r"\s*```$", "", raw).strip()
+
+    log.append(f"raw_len={len(raw)}")
+
     try:
         result = json.loads(raw)
     except Exception:
         result = {"raw_text": raw}
 
-    result["_log"]  = log
-    result["_flow"] = flow
+    result["_log"] = log
     return result
 
 
-@app.route("/debug-job/<job_id>", methods=["GET"])
-def debug_job(job_id):
-    """Shows raw Sarvam status response for debugging"""
-    r = req_lib.get(f"{SARVAM_BASE}/{job_id}/status",
-                    headers={"api-subscription-key": SARVAM_KEY}, timeout=30)
-    return r.text, r.status_code, {"Content-Type": "application/json"}
-
-
-
+@app.route("/health", methods=["GET"])
 def health():
     return jsonify({"status": "ok", "service": "affordplan-sarvam-ocr", "key_set": bool(SARVAM_KEY)})
 
@@ -353,9 +239,8 @@ def compare():
         if suffix not in ALLOWED:
             return jsonify({"error": f"Unsupported format '{suffix}'"}), 400
 
-        mime = f.content_type or "image/jpeg"
-        flow = request.form.get("flow", "records")
-        result = run_sarvam_ocr(f.read(), filename, mime, flow)
+        mime   = f.content_type or "image/jpeg"
+        result = run_sarvam_ocr(f.read(), filename, mime)
         return jsonify({"sarvam": result})
     except Exception as e:
         import traceback
