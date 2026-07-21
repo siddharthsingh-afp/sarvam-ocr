@@ -19,24 +19,70 @@ SARVAM_CHAT = "https://api.sarvam.ai/v1/chat/completions"
 ALLOWED     = {".jpg", ".jpeg", ".png", ".webp", ".pdf"}
 
 PROMPTS = {
-    "medicine": """From this document text extract ONLY these fields as JSON:
-{"patient_name":null,"doctor_name":null,"hospital_name":null,"date":null,"diagnosis":null,
-"medicines":[{"name":null,"strength":null,"form":null,"frequency":null,"duration":null,"quantity":null,"confidence":"high"}]}
-Rules: frequency=Indian format e.g.1-0-1/BD/TDS. quantity=frequency x duration as integer. Return ONLY valid JSON.""",
+    "medicine": """Extract medicine details from this prescription text. Return ONLY this JSON:
+{
+  "patient_name": null,
+  "doctor_name": null,
+  "hospital_name": null,
+  "date": null,
+  "diagnosis": null,
+  "medicines": [
+    {
+      "name": null,
+      "strength": null,
+      "form": null,
+      "frequency": null,
+      "duration": null,
+      "quantity": null,
+      "confidence": "high"
+    }
+  ]
+}
+Return ONLY valid JSON. No explanation. No markdown.""",
 
-    "labtest": """From this document text extract ONLY these fields as JSON:
-{"patient_name":null,"doctor_name":null,"hospital_name":null,"date":null,
-"lab_tests":[{"name":null,"value":null,"unit":null,"reference_range":null,"flag":null,"confidence":"high"}]}
-Rules: flag=NORMAL/HIGH/LOW/ABNORMAL. Return ONLY valid JSON.""",
+    "labtest": """Extract lab test details from this document text. Return ONLY this JSON:
+{
+  "patient_name": null,
+  "doctor_name": null,
+  "hospital_name": null,
+  "date": null,
+  "lab_tests": [
+    {
+      "name": null,
+      "value": null,
+      "unit": null,
+      "reference_range": null,
+      "flag": null,
+      "confidence": "high"
+    }
+  ]
+}
+Return ONLY valid JSON. No explanation. No markdown.""",
 
-    "records": """From this document text extract ONLY these fields as JSON:
-{"document_type":null,"patient_name":null,"patient_uhid":null,"doctor_name":null,
-"hospital_name":null,"date":null,"diagnosis":null,"is_handwritten":null,"summary":null}
-Rules: document_type=prescription/lab_report/bill/imaging/discharge/other. Return ONLY valid JSON.""",
+    "records": """Extract document details from this medical document text. Return ONLY this JSON:
+{
+  "document_type": null,
+  "patient_name": null,
+  "patient_uhid": null,
+  "doctor_name": null,
+  "hospital_name": null,
+  "date": null,
+  "diagnosis": null,
+  "is_handwritten": null,
+  "summary": null
+}
+document_type must be one of: prescription, lab_report, bill, imaging, discharge, other.
+Return ONLY valid JSON. No explanation. No markdown.""",
 
-    "maternity": """From this document text extract ONLY these fields as JSON:
-{"patient_name":null,"edd":null,"lmp":null}
-Rules: edd=Expected Date of Delivery YYYY-MM-DD. lmp=Last Menstrual Period YYYY-MM-DD. Return ONLY valid JSON.""",
+    "maternity": """Extract maternity details from this document text. Return ONLY this JSON:
+{
+  "patient_name": null,
+  "edd": null,
+  "lmp": null
+}
+edd = Expected Date of Delivery in YYYY-MM-DD format.
+lmp = Last Menstrual Period in YYYY-MM-DD format.
+Return ONLY valid JSON. No explanation. No markdown.""",
 }
 
 def sh():
@@ -164,16 +210,46 @@ def run_sarvam_ocr(file_bytes, filename, mime, flow="records"):
     else:
         return {"error": "Timed out", "_log": log, "_status": final_status}
 
-    # Step 6 — Download output
-    # Call download-files without specifying files — Sarvam returns all outputs
+    # Step 6 — Download output — Sarvam always outputs document.zip
     extracted_text = ""
     log.append(f"final_status_keys={list(final_status.keys())}")
 
-    # Try calling download-files with different params to get all outputs
-    params_to_try = [{}, {"files": []}]
-    if output_file:
-        params_to_try.append({"files": [output_file]})
+    params_to_try = [{"files": ["document.zip"]}, {}, {"files": []}]
+    if output_file and output_file != "document.zip":
+        params_to_try.insert(0, {"files": [output_file]})
+
     for files_param in params_to_try:
+        try:
+            r6 = req_lib.post(f"{SARVAM_BASE}/{job_id}/download-files",
+                              headers=sh(), json=files_param, timeout=30)
+            log.append(f"download files_param={files_param} status={r6.status_code}")
+            if not r6.ok:
+                continue
+            j6 = r6.json()
+            log.append(f"download response={json.dumps(j6)[:300]}")
+            dl_urls = j6.get("download_urls") or j6.get("urls") or {}
+            if not dl_urls:
+                continue
+            for fname, entry6 in dl_urls.items():
+                dl_url = ""
+                if isinstance(entry6, dict):
+                    dl_url = entry6.get("file_url") or entry6.get("url") or ""
+                elif isinstance(entry6, str):
+                    dl_url = entry6
+                if not dl_url:
+                    continue
+                rd = req_lib.get(dl_url, timeout=60)
+                log.append(f"fetched {fname}: status={rd.status_code} len={len(rd.content)}")
+                if rd.ok and rd.content:
+                    t = extract_from_content(rd.content, rd.headers.get("content-type",""), fname)
+                    if t:
+                        extracted_text += t + "\n"
+            if extracted_text:
+                log.append(f"Got text len={len(extracted_text)}")
+                break
+        except Exception as e:
+            log.append(f"download error: {e}")
+            continue
         try:
             r6 = req_lib.post(f"{SARVAM_BASE}/{job_id}/download-files",
                               headers=sh(), json=files_param, timeout=30)
@@ -232,7 +308,12 @@ def run_sarvam_ocr(file_bytes, filename, mime, flow="records"):
         return {"error": f"Extraction failed: {rx.status_code}",
                 "_log": log, "raw_text": extracted_text[:500]}
 
-    raw = rx.json().get("choices", [{}])[0].get("message", {}).get("content") or ""
+    rx_json = rx.json()
+    log.append(f"30B response keys={list(rx_json.keys())}")
+    log.append(f"30B choices={json.dumps(rx_json.get('choices',''))[:300]}")
+
+    raw = (rx_json.get("choices") or [{}])[0]
+    raw = (raw.get("message") or {}).get("content") or ""
     raw = re.sub(r"^```json\s*", "", raw).strip()
     raw = re.sub(r"\s*```$", "", raw).strip()
     try:
